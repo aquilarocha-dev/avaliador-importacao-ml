@@ -205,7 +205,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
       <div class="field"><label for="tgt">Margem mínima desejada (%)</label><input class="num" id="tgt" type="number" step="1" min="0" inputmode="decimal" value="20"></div>
       <div class="field"><label for="mo">Fator importação otimista (×)</label><input class="num" id="mo" type="number" step="0.05" min="1" inputmode="decimal" value="1.8"></div>
       <div class="field"><label for="mp">Fator importação pessimista (×)</label><input class="num" id="mp" type="number" step="0.05" min="1" inputmode="decimal" value="2.2"></div>
-      <div class="field"><label for="oth">Custos extras (R$/un.)</label><input class="num" id="oth" type="number" step="0.01" min="0" inputmode="decimal" value="0"></div>
+      <div class="field"><label for="oth">Custos extras (R$/un.)</label><input class="num" id="oth" type="number" step="0.01" min="0" inputmode="decimal" value="2"></div>
     </div>
     <p class="hint">Custo de importação = preço em US$ × câmbio × fator. O fator já cobre impostos de importação, frete, despachante e porto. Use "custos extras" para o que ficar fora, como embalagem ou certificação. A comissão usada segue o tipo de anúncio (Clássico ou Premium), que é preenchido pelo anúncio de referência escolhido na busca; confira as tarifas da categoria do produto no Mercado Livre. Ao escolher um anúncio, o preço em US$ vem preenchido com a sugestão da JoomPro (tracejado em laranja), convertida para que o custo otimista seja o preço entregue da JoomPro; substitua pelo preço do fornecedor. O câmbio e os percentuais ficam lembrados neste aparelho.</p>
   </section>
@@ -275,7 +275,9 @@ let lastCalc=null;
 let session=null;
 let remote=[]; // avaliações vindas do Supabase
 
-PARAMS.forEach(id=>{const v=store.get("p_"+id,null);if(v!=null)$(id).value=v;});
+// chave do parâmetro no aparelho; "oth" ganhou versão nova quando o padrão passou para R$ 2
+const pkey=id=>"p_"+id+(id==="oth"?"_v2":"");
+PARAMS.forEach(id=>{const v=store.get(pkey(id),null);if(v!=null)$(id).value=v;});
 
 // foto do anúncio com alternativa quando a imagem não carrega
 function thumb(url,link,cls){
@@ -378,7 +380,7 @@ function render(){
     `<tr><td>Retorno sobre o custo</td><td>${pct(o.roi)}</td><td>${pct(pe.roi)}</td></tr>`+
     `<tr><td>Venda no ponto de equilíbrio</td><td>${brl(o.be)}</td><td>${brl(pe.be)}</td></tr>`+
     `<tr><td>Preço máximo para ${pct(p.tgt)} de margem</td><td>${usd(Math.max(0,o.maxUsd))}</td><td>${usd(Math.max(0,pe.maxUsd))}</td></tr>`;
-  PARAMS.forEach(id=>store.set("p_"+id,$(id).value));
+  PARAMS.forEach(id=>store.set(pkey(id),$(id).value));
 }
 document.querySelectorAll("input.num").forEach(i=>i.addEventListener("input",render));
 $("tipo").addEventListener("change",render);
