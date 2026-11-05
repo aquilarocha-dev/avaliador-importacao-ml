@@ -269,14 +269,17 @@ Deno.serve(async (req) => {
       // 1) correspondência direta com o anúncio
       const r: any = await mcpCall(token, "joompro_find_matching_products", { country: "BR", products: [product], preset: "general_info" });
       if (r.unauthorized) { await admin.from("joompulse_tokens").delete().eq("user_id", userId); return json({ needs_connect: true }); }
-      let table = (!r.result?.isError && (findTable(r.result?.structuredContent) ?? findTable(r.result?.content))) || { columns: [], data: [] };
+      const errText = (x: any) => (x?.content ?? []).map((c: any) => c.text).filter(Boolean).join(" ").slice(0, 300);
+      if (r.result?.isError) return json({ error: errText(r.result) || "A JoomPro recusou a consulta" }, 502);
+      let table = findTable(r.result?.structuredContent) ?? findTable(r.result?.content) ?? { columns: [], data: [] };
       if (table.data.length) return json({ mode: "match", ...table });
       // 2) sem correspondência: produtos parecidos na mesma categoria do ML, pelas palavras do título
       if (category && words.length) {
         const s: any = await mcpCall(token, "joompro_search_products", {
           country: "BR", taxonomy: "meli", categories: [category], where: { meliTitle: words }, sort_by: "matchScore", limit: 50, preset: "general_info",
         });
-        table = (!s.result?.isError && (findTable(s.result?.structuredContent) ?? findTable(s.result?.content))) || { columns: [], data: [] };
+        if (s.result?.isError) return json({ error: errText(s.result) || "A JoomPro recusou a consulta" }, 502);
+        table = findTable(s.result?.structuredContent) ?? findTable(s.result?.content) ?? { columns: [], data: [] };
         return json({ mode: "similar", ...table });
       }
       return json({ mode: "match", columns: [], data: [] });

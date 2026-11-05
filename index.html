@@ -441,14 +441,16 @@ $("f-busca").addEventListener("submit",async ev=>{
     $("b-busca").disabled=false;return;
   }
   try{
-    const r=await jpCall("search",{q});
+    const ck="s:"+q.toLowerCase();
+    let r=cacheGet(ck);
+    if(!r){r=await jpCall("search",{q}); if(!r.error&&!r.needs_connect)cacheSet(ck,r);}
     if(r.needs_connect){
       setJp(false);
       $("st").className="status err";
       $("st").textContent="Conecte sua conta do JoomPulse para buscar (botão logo abaixo).";
     }else if(r.error){
       $("st").className="status err";
-      $("st").textContent="A busca falhou: "+String(r.error).slice(0,200);
+      $("st").textContent=jpErrText(r.error,"A busca falhou: ");
     }else{
       setJp(true);
       showResults(q,toRows(r));
@@ -462,6 +464,24 @@ $("f-busca").addEventListener("submit",async ev=>{
 
 // ---------- conexão JoomPulse (OAuth via Edge Function) ----------
 const JP_FN=SUPABASE_URL+"/functions/v1/joompulse-oauth/";
+// guarda respostas do JoomPulse por 30 min, para não gastar consultas do plano repetindo a mesma busca
+const CACHE_TTL=30*60*1000, memCache=new Map();
+function cacheGet(k){
+  const now=Date.now(); let e=memCache.get(k);
+  if(!e){try{e=JSON.parse(sessionStorage.getItem("jp:"+k)||"null")}catch(_){e=null}}
+  return e&&now-e.t<CACHE_TTL?e.v:null;
+}
+function cacheSet(k,v){const e={t:Date.now(),v};memCache.set(k,e);try{sessionStorage.setItem("jp:"+k,JSON.stringify(e))}catch(_){}}
+// mensagens do JoomPulse em português; o limite por hora do plano vira "libera às HH:MM" no horário local
+function jpErrText(m,prefix){
+  m=String(m||"");
+  if(/request limit|limit for your plan|quota/i.test(m)){
+    const r=m.match(/Resets at (\d{1,2}):(\d{2}) UTC/i); let t="";
+    if(r){const d=new Date();d.setUTCHours(+r[1],+r[2],0,0);if(d<new Date())d.setUTCDate(d.getUTCDate()+1);t=` Libera às ${d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}.`;}
+    return "Limite de consultas por hora do seu plano JoomPulse atingido."+t+" A calculadora continua funcionando: preencha os preços à mão até lá.";
+  }
+  return (prefix||"")+m.slice(0,200);
+}
 async function jpCall(route,body){
   const r=await fetch(JP_FN+route,{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_KEY,"Authorization":"Bearer "+session.access_token},body:JSON.stringify(body||{})});
   const data=await r.json().catch(()=>({error:"resposta inválida ("+r.status+")"}));
@@ -594,8 +614,11 @@ async function loadJoompro(row){
         rows=await jpTool("joompro_search_products",{country:"BR",taxonomy:"meli",categories:[category],where:{meliTitle:words},sort_by:"matchScore",limit:50,preset:"general_info"});
       }
     }else if(session){
-      const x=await jpCall("joompro",{product:id,category,words});
+      const ck="j:"+id;
+      let x=cacheGet(ck);
+      if(!x){x=await jpCall("joompro",{product:id,category,words}); if(!x.error&&!x.needs_connect)cacheSet(ck,x);}
       if(x.needs_connect){if(seq===jpSeq)setUsdNote("Conecte o JoomPulse para ver o preço sugerido pela JoomPro.");return;}
+      if(x.error){if(seq===jpSeq)setUsdNote(jpErrText(x.error,"JoomPro indisponível: "));return;}
       mode=x.mode||"match"; rows=toRowsG(x);
     }else{if(seq===jpSeq)setUsdNote("");return;}
   }catch(e){if(seq===jpSeq)setUsdNote("Não foi possível consultar a JoomPro agora.");return;}
