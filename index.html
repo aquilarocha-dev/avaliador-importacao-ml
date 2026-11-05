@@ -52,6 +52,10 @@ button:disabled{opacity:.55;cursor:default}
 .field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .field.full{grid-column:1/-1}
 .field label{font-size:.8rem;color:var(--muted);font-weight:500}
+.opts{flex-direction:row;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.check{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);cursor:pointer}
+.check input{width:18px;height:18px;margin:0;padding:0;accent-color:var(--accent)}
+.linkbtn{background:none;border:none;padding:4px 0;color:var(--accent);font-weight:500;font-size:.85rem;text-decoration:underline;cursor:pointer}
 .btns{display:flex;gap:8px;flex-wrap:wrap}
 .btns button{flex:1}
 .hint{font-size:.78rem;color:var(--muted);margin:0}
@@ -133,15 +137,30 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
   <section class="panel" id="p-login" aria-labelledby="l-login" hidden>
     <p class="label" id="l-login">Entrar</p>
     <p class="hint">Entre para salvar as avaliações na nuvem e ver a mesma lista no celular e no computador. A calculadora funciona sem login.</p>
-    <form class="grid login" id="f-login" autocomplete="on">
-      <div class="field"><label for="email">E-mail</label><input id="email" type="email" autocomplete="email" required></div>
-      <div class="field"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" minlength="6" required></div>
+    <form class="grid login" id="f-login" method="post" action="#" autocomplete="on">
+      <div class="field"><label for="email">E-mail</label><input id="email" name="username" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="senha">Senha</label><input id="senha" name="password" type="password" autocomplete="current-password" minlength="6" required></div>
+      <div class="field full opts">
+        <label class="check"><input type="checkbox" id="lembrar" checked> Manter conectado neste aparelho</label>
+        <button type="button" class="linkbtn" id="b-esqueci">Esqueci minha senha</button>
+      </div>
       <div class="field full btns">
         <button class="primary" type="submit" id="b-entrar">Entrar</button>
         <button type="button" id="b-criar">Criar conta</button>
       </div>
     </form>
     <p class="status" id="login-st"></p>
+  </section>
+
+  <section class="panel" id="p-nova" aria-labelledby="l-nova" hidden>
+    <p class="label" id="l-nova">Criar nova senha</p>
+    <form class="grid login" id="f-nova" method="post" action="#">
+      <input id="nova-email" name="username" type="email" autocomplete="username" hidden>
+      <div class="field"><label for="nova">Nova senha</label><input id="nova" name="new-password" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="field"><label for="nova2">Repita a nova senha</label><input id="nova2" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="field full"><button class="primary" type="submit" id="b-nova">Salvar nova senha</button></div>
+    </form>
+    <p class="status" id="nova-st"></p>
   </section>
 
   <section class="panel" aria-labelledby="l-busca">
@@ -210,7 +229,17 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
 const SUPABASE_URL="https://vjsankpiurlhgsymtboq.supabase.co";
 const SUPABASE_KEY="sb_publishable_Q5z3dOYiP2A9BIs8rJIWSQ_jxQ7D1yE";
 const TABLE="importacao_avaliacoes";
-const sb=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true}}):null;
+// link de redefinição de senha chega com #...type=recovery — guarda antes do Supabase limpar a URL
+const RECOVERY=/type=recovery/.test(location.hash);
+// "Manter conectado": sessão no localStorage (fica entre aberturas) ou no sessionStorage (some ao fechar a aba)
+const REM_KEY="lembrar_login";
+const remember=()=>{try{return localStorage.getItem(REM_KEY)!=="0"}catch(e){return true}};
+const authStorage={
+  getItem:k=>{try{return localStorage.getItem(k)??sessionStorage.getItem(k)}catch(e){return null}},
+  setItem:(k,v)=>{try{if(remember()){localStorage.setItem(k,v);sessionStorage.removeItem(k)}else{sessionStorage.setItem(k,v);localStorage.removeItem(k)}}catch(e){}},
+  removeItem:k=>{try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}}
+};
+const sb=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storage:authStorage}}):null;
 
 const $=id=>document.getElementById(id);
 const brl=v=>isFinite(v)?Number(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}):"—";
@@ -470,23 +499,71 @@ function authErr(e){
   if(/Email not confirmed/i.test(m))return "Confirme seu e-mail pelo link que enviamos antes de entrar.";
   if(/already registered/i.test(m))return "Esse e-mail já tem conta. Use Entrar.";
   if(/Password should be/i.test(m))return "A senha precisa ter pelo menos 6 caracteres.";
+  if(/should be different/i.test(m))return "A nova senha precisa ser diferente da anterior.";
+  if(/rate limit|too many|security purposes/i.test(m))return "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.";
   return m||"Não foi possível entrar agora.";
 }
+// pede ao navegador para salvar a senha (Chrome/Edge/Android); nos outros, o formulário padrão já dispara o "salvar senha"
+async function savePassword(email,password){
+  try{if(window.PasswordCredential&&navigator.credentials)await navigator.credentials.store(new PasswordCredential({id:email,password,name:email}));}catch(e){}
+}
+try{$("lembrar").checked=remember();}catch(e){}
+$("lembrar").addEventListener("change",()=>{try{localStorage.setItem(REM_KEY,$("lembrar").checked?"1":"0")}catch(e){}});
+
 $("f-login").addEventListener("submit",async ev=>{
   ev.preventDefault(); if(!sb)return;
+  try{localStorage.setItem(REM_KEY,$("lembrar").checked?"1":"0")}catch(e){}
+  const email=$("email").value.trim(), password=$("senha").value;
   $("b-entrar").disabled=true; setLoginMsg("Entrando…");
-  const {error}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("senha").value});
+  const {error}=await sb.auth.signInWithPassword({email,password});
   $("b-entrar").disabled=false;
-  if(error)setLoginMsg(authErr(error),true); else setLoginMsg("");
+  if(error){setLoginMsg(authErr(error),true);return;}
+  setLoginMsg("");
+  await savePassword(email,password);
+});
+
+$("b-esqueci").addEventListener("click",async()=>{
+  if(!sb)return;
+  const email=$("email").value.trim();
+  if(!email||!$("email").checkValidity()){setLoginMsg("Digite seu e-mail no campo acima e toque de novo em “Esqueci minha senha”.",true);$("email").focus();return;}
+  $("b-esqueci").disabled=true; setLoginMsg("Enviando…");
+  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  $("b-esqueci").disabled=false;
+  if(error){setLoginMsg(authErr(error),true);return;}
+  setLoginMsg(`Se ${email} tiver conta, chega um e-mail com o link para criar uma nova senha. Abra o link neste aparelho.`);
+});
+
+let recovering=false;
+function showRecovery(s){
+  recovering=true;
+  $("p-nova").hidden=false; $("p-login").hidden=true;
+  $("nova-email").value=(s&&s.user&&s.user.email)||"";
+  $("nova-st").className="status"; $("nova-st").textContent="Escolha a nova senha para "+($("nova-email").value||"sua conta")+".";
+  window.scrollTo({top:0}); setTimeout(()=>$("nova").focus(),50);
+}
+$("f-nova").addEventListener("submit",async ev=>{
+  ev.preventDefault(); if(!sb)return;
+  const p1=$("nova").value, p2=$("nova2").value, st=$("nova-st");
+  if(p1!==p2){st.className="status err";st.textContent="As duas senhas não são iguais.";return;}
+  $("b-nova").disabled=true; st.className="status"; st.textContent="Salvando…";
+  const {error}=await sb.auth.updateUser({password:p1});
+  $("b-nova").disabled=false;
+  if(error){st.className="status err";st.textContent=authErr(error);return;}
+  await savePassword($("nova-email").value,p1);
+  recovering=false; $("p-nova").hidden=true; $("nova").value=$("nova2").value="";
+  const msg=$("saved-msg"); msg.hidden=false; msg.className="ok"; msg.textContent="Senha alterada. Você já está conectado.";
+  setLoginMsg("");
 });
 $("b-criar").addEventListener("click",async()=>{
   if(!sb)return;
   const email=$("email").value.trim(), password=$("senha").value;
   if(!email||password.length<6){setLoginMsg("Informe e-mail e uma senha de pelo menos 6 caracteres.",true);return;}
+  try{localStorage.setItem(REM_KEY,$("lembrar").checked?"1":"0")}catch(e){}
   $("b-criar").disabled=true; setLoginMsg("Criando conta…");
   const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});
   $("b-criar").disabled=false;
   if(error){setLoginMsg(authErr(error),true);return;}
+  await savePassword(email,password);
   if(!data.session)setLoginMsg("Conta criada. Abra o e-mail de confirmação e clique no link; depois volte aqui e toque em Entrar.");
 });
 $("b-sair").addEventListener("click",async()=>{if(sb)await sb.auth.signOut();});
@@ -494,6 +571,7 @@ $("b-sair").addEventListener("click",async()=>{if(sb)await sb.auth.signOut();});
 function applySession(s){
   session=s;
   $("p-login").hidden=!!s;
+  if(!s){recovering=false;$("p-nova").hidden=true;}
   $("who").hidden=!s;
   $("who-email").textContent=s?s.user.email:"";
   if(s){flushPending().then(loadRemote);} else {remote=[];renderSaved();}
@@ -612,8 +690,12 @@ $("f-ficha").addEventListener("submit",async ev=>{
 // ---------- início ----------
 render(); renderListing(); renderSaved();
 if(sb){
-  sb.auth.getSession().then(({data})=>applySession(data.session));
+  sb.auth.getSession().then(({data})=>{
+    applySession(data.session);
+    if(RECOVERY&&data.session)showRecovery(data.session);
+  });
   sb.auth.onAuthStateChange((evt,s)=>{
+    if(evt==="PASSWORD_RECOVERY"){if(!session)applySession(s);showRecovery(s);return;}
     if(evt==="SIGNED_OUT"||(evt==="SIGNED_IN"&&(!session||session.user.id!==s.user.id)))applySession(s);
     else if(s)session=s; // mantém o token atualizado após renovação
   });
