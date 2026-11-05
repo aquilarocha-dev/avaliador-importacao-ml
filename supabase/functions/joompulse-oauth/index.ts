@@ -285,6 +285,28 @@ Deno.serve(async (req) => {
       return json({ mode: "match", columns: [], data: [] });
     }
 
+    if (route === "item") {
+      const id = String(body.id ?? "").trim().slice(0, 40);
+      if (!id) return json({ error: "item vazio" }, 400);
+      const token = await accessToken(userId);
+      if (!token) return json({ needs_connect: true });
+      const r: any = await mcpCall(token, "meli_get_item", { country: "BR", ids: [id], preset: "full_info" });
+      if (r.unauthorized) { await admin.from("joompulse_tokens").delete().eq("user_id", userId); return json({ needs_connect: true }); }
+      if (r.result?.isError) return json({ error: (r.result?.content ?? []).map((c: any) => c.text).join(" ").slice(0, 300) }, 502);
+      const t = findTable(r.result?.structuredContent) ?? findTable(r.result?.content);
+      const il = t ? t.columns.indexOf("listingType") : -1;
+      return json({ listingType: t && il >= 0 && t.data[0] ? t.data[0][il] : null });
+    }
+
+    if (route === "usage") {
+      const token = await accessToken(userId);
+      if (!token) return json({ needs_connect: true });
+      const r: any = await mcpCall(token, "get_mcp_usage", {});
+      let u: any = r.result?.structuredContent ?? null;
+      if (!u) { try { u = JSON.parse((r.result?.content ?? [])[0]?.text ?? "null"); } catch (_) { u = null; } }
+      return json({ buckets: u?.buckets ?? null });
+    }
+
     if (route === "disconnect") {
       await admin.from("joompulse_tokens").delete().eq("user_id", userId);
       return json({ ok: true });
@@ -309,24 +331,6 @@ Deno.serve(async (req) => {
       }
       const table = findTable(result.structuredContent) ?? findTable(result.content) ?? findTable(result);
       if (!table) return json({ error: "Resposta do JoomPulse em formato inesperado" }, 502);
-      // tipo de anúncio (Premium/Clássico) do item do buy box, via meli_get_item (a busca não traz a coluna)
-      const iBB = table.columns.indexOf("buyBoxItemId");
-      if (iBB >= 0) {
-        const ids = [...new Set(table.data.map((d: any[]) => d[iBB]).filter(Boolean))].slice(0, 100) as string[];
-        const types: Record<string, string> = {};
-        if (ids.length) {
-          try {
-            const x: any = await mcpCall(token, "meli_get_item", { country: "BR", ids, preset: "full_info" });
-            const t = findTable(x.result?.structuredContent) ?? findTable(x.result?.content);
-            if (t) {
-              const ii = t.columns.indexOf("itemId"), il = t.columns.indexOf("listingType");
-              if (ii >= 0 && il >= 0) for (const row of t.data) types[row[ii]] = row[il];
-            }
-          } catch (_) { /* tipo fica em branco */ }
-        }
-        table.columns = [...table.columns, "listingType"];
-        table.data = table.data.map((d: any[]) => [...d, types[d[iBB]] ?? null]);
-      }
       return json(table);
     }
 

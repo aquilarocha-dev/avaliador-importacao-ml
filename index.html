@@ -99,6 +99,7 @@ input.sug{border:1.5px dashed var(--accent);background:color-mix(in srgb,var(--a
 .jp{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--muted);background:var(--soft);border-radius:7px;padding:8px 10px}
 .jp button{padding:7px 12px;font-size:.85rem}
 .jp.on{color:var(--good)}
+.jpask{padding:7px 12px;font-size:.85rem;border:1.5px dashed var(--accent);color:var(--accent);background:var(--surface)}
 .jp.on button{background:none;border:none;color:var(--muted);font-weight:500;text-decoration:underline;padding:4px}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .stat{background:var(--soft);border-radius:7px;padding:8px 10px}
@@ -249,7 +250,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
       <div class="field"><label for="mp">Fator importação pessimista (×)</label><input class="num" id="mp" type="number" step="0.05" min="1" inputmode="decimal" value="2.2"></div>
       <div class="field"><label for="oth">Custos extras (R$/un.)</label><input class="num" id="oth" type="number" step="0.01" min="0" inputmode="decimal" value="2"></div>
     </div>
-    <p class="hint">Custo de importação = preço em US$ × câmbio × fator. O fator já cobre impostos de importação, frete, despachante e porto. Use "custos extras" para o que ficar fora, como embalagem ou certificação. A comissão usada segue o tipo de anúncio (Clássico ou Premium), que é preenchido pelo anúncio de referência escolhido na busca; confira as tarifas da categoria do produto no Mercado Livre. Ao escolher um anúncio, o preço em US$ vem preenchido com a sugestão da JoomPro (tracejado em laranja), convertida para que o custo otimista seja o preço entregue da JoomPro; substitua pelo preço do fornecedor. O câmbio e os percentuais ficam lembrados neste aparelho.</p>
+    <p class="hint">Custo de importação = preço em US$ × câmbio × fator. O fator já cobre impostos de importação, frete, despachante e porto. Use "custos extras" para o que ficar fora, como embalagem ou certificação. A comissão usada segue o tipo de anúncio (Clássico ou Premium), que é preenchido pelo anúncio de referência escolhido na busca; confira as tarifas da categoria do produto no Mercado Livre. Ao escolher um anúncio e tocar em "Buscar preço sugerido na JoomPro", o preço em US$ vem preenchido com a sugestão da JoomPro (tracejado em laranja), convertida para que o custo otimista seja o preço entregue da JoomPro; substitua pelo preço do fornecedor. O câmbio e os percentuais ficam lembrados neste aparelho.</p>
   </section>
 
   <section class="panel" aria-labelledby="l-res">
@@ -479,15 +480,6 @@ $("f-busca").addEventListener("submit",async ev=>{
     try{
       const res=await mcp.callTool("JoomPulse","meli_search_products",{country:"BR",queries:[q],group:"product",sort_by:"revenue1m",limit:20,preset:"full_info"},{cache:{staleTime:600000,gcTime:3600000}});
       const rows=toRows(res.payload||{});
-      // tipo de anúncio (Premium/Clássico) do item do buy box, via meli_get_item
-      const ids=[...new Set(rows.map(r=>r.buyBoxItemId).filter(Boolean))].slice(0,100);
-      if(ids.length){
-        try{
-          const x=await mcp.callTool("JoomPulse","meli_get_item",{country:"BR",ids,preset:"full_info"},{cache:{staleTime:600000,gcTime:3600000}});
-          const types={}; toRows(x.payload||{}).forEach(r=>{types[r.itemId]=r.listingType;});
-          rows.forEach(r=>{r.listingType=types[r.buyBoxItemId]||null;});
-        }catch(e){}
-      }
       showResults(q,rows);
     }catch(e){$("st").className="status err";$("st").textContent=errMsg(e);}
     $("b-busca").disabled=false;return;
@@ -502,7 +494,7 @@ $("f-busca").addEventListener("submit",async ev=>{
   try{
     const ck="s:"+q.toLowerCase();
     let r=cacheGet(ck);
-    if(!r){r=await jpCall("search",{q}); if(!r.error&&!r.needs_connect)cacheSet(ck,r);}
+    if(!r){r=await jpCall("search",{q}); if(!r.error&&!r.needs_connect)cacheSet(ck,r); refreshUsage();}
     if(r.needs_connect){
       setJp(false);
       $("st").className="status err";
@@ -552,13 +544,30 @@ let jpConnected=false;
 function setJp(on){
   jpConnected=on;
   const box=$("jp"); box.hidden=!!mcp||!session; box.className="jp"+(on?" on":"");
-  $("jp-st").textContent=on?"✓ JoomPulse conectado":"JoomPulse não conectado neste login.";
+  $("jp-st").textContent=on?"✓ JoomPulse conectado"+(usageTxt?" · "+usageTxt:""):"JoomPulse não conectado neste login.";
   $("b-jp").textContent=on?"desconectar":"Conectar JoomPulse";
+}
+let usageTxt="";
+async function refreshUsage(){
+  try{
+    let b=null;
+    if(mcp){const x=await mcp.callTool("JoomPulse","get_mcp_usage",{});b=(x.payload&&x.payload.buckets)||null;}
+    else if(session){const x=await jpCall("usage");b=x.buckets||null;}
+    if(!b)return;
+    const tot=k=>b.find(z=>z.scope==="total"&&z.period===k);
+    const m=tot("monthly"), h=tot("hourly");
+    if(!m||m.unlimited){usageTxt="";}
+    else{
+      const when=m.resetsAt?new Date(m.resetsAt).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}):"";
+      usageTxt=`${m.remaining} de ${m.limit} consultas no mês`+(m.remaining===0&&when?` · volta em ${when}`:"")+(h&&!h.unlimited&&m.remaining>0?` · ${h.remaining} nesta hora`:"");
+    }
+    $("jp-st").textContent=(jpConnected?"✓ JoomPulse conectado":"JoomPulse")+(usageTxt?" · "+usageTxt:"");
+  }catch(e){}
 }
 async function refreshJp(){
   await mcpReady;
   if(mcp||!session){$("jp").hidden=true;return;}
-  try{const r=await jpCall("status");setJp(!!r.connected);}catch(e){setJp(false);}
+  try{const r=await jpCall("status");setJp(!!r.connected);if(r.connected)refreshUsage();}catch(e){setJp(false);}
 }
 $("b-jp").addEventListener("click",async()=>{
   if(!session)return;
@@ -662,6 +671,34 @@ async function jpTool(name,args){
   return null;
 }
 let jpCands=[], jpMode="match";
+// tipo de anúncio só do anúncio escolhido: 1 consulta (meli_get_item), guardada em cache
+async function loadListingType(r,el){
+  const id=r.buyBoxItemId; if(!id)return;
+  const ck="t:"+id; let t=cacheGet(ck);
+  if(t==null){
+    await mcpReady;
+    try{
+      if(mcp){const x=await mcp.callTool("JoomPulse","meli_get_item",{country:"BR",ids:[id],preset:"full_info"},{cache:{staleTime:3600000,gcTime:3600000}});t=(toRowsG(x.payload||{})[0]||{}).listingType||"";}
+      else if(session){const x=await jpCall("item",{id});if(x.error||x.needs_connect)return;t=x.listingType||"";}
+      else return;
+      cacheSet(ck,t); refreshUsage();
+    }catch(e){return;}
+  }
+  r.listingType=t||null;
+  if(selected&&selected.title===r.title){selected.listingType=r.listingType;applyListingType(r.listingType);}
+  if(el&&t){const m=el.querySelector(".m");if(m&&!m.querySelector(".lt"))m.insertAdjacentHTML("afterbegin",ltBadge(t));}
+  renderListing(); render();
+}
+// JoomPro sob demanda: mostra um botão em vez de consultar sozinho
+let jpRow=null;
+function prepJoompro(row){
+  jpRow=row; ++jpSeq; jpSug=null; jpCands=[]; usdManual=false; syncJoompro();
+  const id=row&&(row.productId||row.buyBoxItemId);
+  if(!id){setUsdNote("");return;}
+  const cached=cacheGet("j2:"+id);
+  if(cached){loadJoompro(row);return;}
+  setUsdNote(`<button type="button" class="jpask" id="b-jpask">Buscar preço sugerido na JoomPro</button> <span class="ml">gasta 1 a 2 consultas do plano</span>`);
+}
 async function loadJoompro(row){
   const id=row&&(row.productId||row.buyBoxItemId); const seq=++jpSeq;
   jpSug=null; jpCands=[]; usdManual=false; syncJoompro();
@@ -682,7 +719,7 @@ async function loadJoompro(row){
     }else if(session){
       const ck="j2:"+id;
       let x=cacheGet(ck);
-      if(!x){x=await jpCall("joompro",{product:id,category,words}); if(!x.error&&!x.needs_connect)cacheSet(ck,x);}
+      if(!x){x=await jpCall("joompro",{product:id,category,words}); if(!x.error&&!x.needs_connect)cacheSet(ck,x); refreshUsage();}
       if(x.needs_connect){if(seq===jpSeq)setUsdNote("Conecte o JoomPulse para ver o preço sugerido pela JoomPro.");return;}
       if(x.error){if(seq===jpSeq)setUsdNote(jpErrText(x.error,"JoomPro indisponível: "));return;}
       mode=x.mode||"match"; rows=toRowsG(x);
@@ -705,6 +742,7 @@ function useCand(i){
   usdManual=false; setUsdNote(sugNoteHtml()); render();
 }
 $("usd-note").addEventListener("click",e=>{
+  if(e.target.closest("#b-jpask")){e.preventDefault();if(jpRow)loadJoompro(jpRow);return;}
   const z=e.target.closest("[data-zoom]"); if(z){e.preventDefault();openLightbox(jpCands[+z.dataset.zoom]);return;}
   // outra opção: abre a foto ampliada para conferir antes de usar
   const b=e.target.closest("[data-cand]"); if(b){e.preventDefault();const c=jpCands[+b.dataset.cand];if(c&&c.imageUrl)openLightbox(c,+b.dataset.cand);else useCand(+b.dataset.cand);}
@@ -740,7 +778,8 @@ function pickRow(r,el){
   if(el){el.classList.add("sel");el.setAttribute("aria-pressed","true");setCollapsed(true);$("list").scrollTop=0;}
   selected={title:r.title,imageUrl:r.imageUrl,meliUrl:r.meliUrl,priceMin:r.priceMin,sales1m:r.sales1m,sellerCount:r.sellerCount,listingType:r.listingType||null};
   applyListingType(r.listingType);
-  loadJoompro(r);
+  prepJoompro(r);
+  if(!r.listingType)loadListingType(r,el);
   if(r.priceMin>0)$("sale").value=r.priceMin.toFixed(2);
   if(market){market.salesRef=r.sales1m;market.sellersRef=r.sellerCount;}
   if(!$("nome").value)$("nome").value=(r.title||"").slice(0,60);
@@ -777,8 +816,7 @@ function showResults(q,rows){
   // mostra o anúncio líder como referência, mantendo o preço mediano
   const lead=top[0]||rows[0];
   selected={title:lead.title,imageUrl:lead.imageUrl,meliUrl:lead.meliUrl,priceMin:lead.priceMin,sales1m:lead.sales1m,sellerCount:lead.sellerCount,listingType:lead.listingType||null};
-  applyListingType(lead.listingType);
-  loadJoompro(lead);
+  prepJoompro(lead);
   if(refPrice)$("sale").value=refPrice.toFixed(2);
   if(!$("nome").value)$("nome").value=q;
   renderListing(); render();
