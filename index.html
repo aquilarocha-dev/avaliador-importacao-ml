@@ -61,6 +61,10 @@ button:disabled{opacity:.55;cursor:default}
 .check{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);cursor:pointer}
 .check.small{font-size:.76rem;margin-top:2px}
 input[readonly]{opacity:.75}
+input.sug{border:1.5px dashed var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--soft));color:var(--accent)}
+.sugnote{margin:0;font-size:.74rem;line-height:1.35;color:var(--muted)}
+.sugnote b{color:var(--accent);font-weight:600}
+.sugnote a{color:var(--accent)}
 .check input{width:18px;height:18px;margin:0;padding:0;accent-color:var(--accent)}
 .linkbtn{background:none;border:none;padding:4px 0;color:var(--accent);font-weight:500;font-size:.85rem;text-decoration:underline;cursor:pointer}
 .btns{display:flex;gap:8px;flex-wrap:wrap}
@@ -188,7 +192,8 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
   <section class="panel" aria-labelledby="l-custos">
     <p class="label" id="l-custos">2 · Custos e venda</p>
     <div class="grid">
-      <div class="field"><label for="usd">Preço do produto (US$/un.)</label><input class="num" id="usd" type="number" step="0.01" min="0" inputmode="decimal" value="3.20"></div>
+      <div class="field"><label for="usd">Preço do produto (US$/un.)</label><input class="num" id="usd" type="number" step="0.01" min="0" inputmode="decimal" value="3.20">
+        <p class="sugnote" id="usd-note" hidden></p></div>
       <div class="field"><label for="fx">Câmbio (R$ por US$)</label><input class="num" id="fx" type="number" step="0.01" min="0" inputmode="decimal" value="5.40"></div>
       <div class="field"><label for="sale">Preço de venda no ML (R$)</label><input class="num" id="sale" type="number" step="0.01" min="0" inputmode="decimal" value="59.90"></div>
       <div class="field"><label for="tax">Imposto sobre a venda (%)</label><input class="num" id="tax" type="number" step="0.1" min="0" inputmode="decimal" value="11"></div>
@@ -202,7 +207,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
       <div class="field"><label for="mp">Fator importação pessimista (×)</label><input class="num" id="mp" type="number" step="0.05" min="1" inputmode="decimal" value="2.2"></div>
       <div class="field"><label for="oth">Custos extras (R$/un.)</label><input class="num" id="oth" type="number" step="0.01" min="0" inputmode="decimal" value="0"></div>
     </div>
-    <p class="hint">Custo de importação = preço em US$ × câmbio × fator. O fator já cobre impostos de importação, frete, despachante e porto. Use "custos extras" para o que ficar fora, como embalagem ou certificação. A comissão usada segue o tipo de anúncio (Clássico ou Premium), que é preenchido pelo anúncio de referência escolhido na busca; confira as tarifas da categoria do produto no Mercado Livre. O câmbio e os percentuais ficam lembrados neste aparelho.</p>
+    <p class="hint">Custo de importação = preço em US$ × câmbio × fator. O fator já cobre impostos de importação, frete, despachante e porto. Use "custos extras" para o que ficar fora, como embalagem ou certificação. A comissão usada segue o tipo de anúncio (Clássico ou Premium), que é preenchido pelo anúncio de referência escolhido na busca; confira as tarifas da categoria do produto no Mercado Livre. Ao escolher um anúncio, o preço em US$ vem preenchido com a sugestão da JoomPro (tracejado em laranja), convertida para que o custo otimista seja o preço entregue da JoomPro; substitua pelo preço do fornecedor. O câmbio e os percentuais ficam lembrados neste aparelho.</p>
   </section>
 
   <section class="panel" aria-labelledby="l-res">
@@ -342,6 +347,7 @@ function renderListing(){
 
 function render(){
   syncFrete();
+  syncJoompro();
   const r=calc(); lastCalc=r; const p=r.p, o=r.o, pe=r.pe;
   $("h-o").textContent=fac(p.mo); $("h-p").textContent=fac(p.mp);
   let cls,title,why;
@@ -499,11 +505,62 @@ function ltBadge(t,big){
 }
 function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2}
 
+// ---------- preço sugerido pela JoomPro ----------
+// joomproPrice = custo entregue no Brasil (frete, seguro, imposto de importação e impostos de venda incluídos).
+// Enquanto o usuário não digita o preço do fornecedor, o campo US$ fica com o valor equivalente
+// (joomproPrice ÷ câmbio ÷ fator otimista), para o custo de importação otimista bater com a JoomPro.
+let jpSug=null, usdManual=false, jpSeq=0;
+function syncJoompro(){
+  const inp=$("usd"), note=$("usd-note");
+  if(jpSug&&!usdManual){
+    const fx=num("fx"), mo=num("mo");
+    if(fx>0&&mo>0)inp.value=(jpSug.price/(fx*mo)).toFixed(3);
+    inp.classList.add("sug");
+  }else inp.classList.remove("sug");
+}
+function setUsdNote(html){const n=$("usd-note");n.hidden=!html;n.innerHTML=html||"";}
+function sugNoteHtml(){
+  if(!jpSug)return "";
+  const sc=jpSug.score!=null?` · similaridade ${Number(jpSug.score).toLocaleString("pt-BR",{maximumFractionDigits:2})}`:"";
+  const moq=jpSug.moq?` · pedido mín. ${int(jpSug.moq)} un.`:"";
+  const link=jpSug.url?` · <a href="${jpSug.url}" target="_blank" rel="noopener">ver na JoomPro</a>`:"";
+  return usdManual
+    ? `Referência JoomPro: ${brl(jpSug.price)} entregue no Brasil${link}`
+    : `<b>Sugestão JoomPro</b>: ${brl(jpSug.price)}/un. entregue no Brasil${moq}${sc}${link}. Digite o preço do fornecedor para substituir.`;
+}
+async function loadJoompro(row){
+  const id=row&&(row.productId||row.buyBoxItemId); const seq=++jpSeq;
+  jpSug=null; usdManual=false; syncJoompro();
+  if(!id){setUsdNote("");return;}
+  setUsdNote("Buscando preço sugerido na JoomPro…");
+  await mcpReady;
+  let rows=[];
+  try{
+    if(mcp){
+      const x=await mcp.callTool("JoomPulse","joompro_find_matching_products",{country:"BR",products:[id],preset:"general_info"},{cache:{staleTime:3600000,gcTime:3600000}});
+      rows=toRowsG(x.payload||{});
+    }else if(session){
+      const x=await jpCall("joompro",{product:id});
+      if(x.needs_connect){if(seq===jpSeq)setUsdNote("Conecte o JoomPulse para ver o preço sugerido pela JoomPro.");return;}
+      rows=toRowsG(x);
+    }else{if(seq===jpSeq)setUsdNote("");return;}
+  }catch(e){if(seq===jpSeq)setUsdNote("Não foi possível consultar a JoomPro agora.");return;}
+  if(seq!==jpSeq)return; // o usuário já escolheu outro produto
+  const best=rows.filter(r=>r.joomproPrice>0).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0))[0];
+  if(!best){setUsdNote("A JoomPro não tem produto equivalente a este anúncio. Informe o preço do fornecedor.");render();return;}
+  jpSug={price:best.joomproPrice,moq:best.minOrderQty,score:best.matchScore,url:best.joomproUrl||null,title:best.title||null};
+  setUsdNote(sugNoteHtml()); render();
+}
+function toRowsG(pl){const cols=(pl&&pl.columns)||[], data=(pl&&pl.data)||[];return data.map(d=>Object.fromEntries(cols.map((c,i)=>[c,d[i]])));}
+// capture: roda antes do render() do campo, para o valor digitado não ser sobrescrito pela sugestão
+$("usd").addEventListener("input",()=>{if(jpSug&&!usdManual){usdManual=true;syncJoompro();setUsdNote(sugNoteHtml());}},{capture:true});
+
 function pickRow(r,el){
   $("list").querySelectorAll(".item").forEach(x=>x.classList.remove("sel"));
   if(el)el.classList.add("sel");
   selected={title:r.title,imageUrl:r.imageUrl,meliUrl:r.meliUrl,priceMin:r.priceMin,sales1m:r.sales1m,sellerCount:r.sellerCount,listingType:r.listingType||null};
   applyListingType(r.listingType);
+  loadJoompro(r);
   if(r.priceMin>0)$("sale").value=r.priceMin.toFixed(2);
   if(market){market.salesRef=r.sales1m;market.sellersRef=r.sellerCount;}
   if(!$("nome").value)$("nome").value=(r.title||"").slice(0,60);
@@ -541,6 +598,7 @@ function showResults(q,rows){
   const lead=top[0]||rows[0];
   selected={title:lead.title,imageUrl:lead.imageUrl,meliUrl:lead.meliUrl,priceMin:lead.priceMin,sales1m:lead.sales1m,sellerCount:lead.sellerCount,listingType:lead.listingType||null};
   applyListingType(lead.listingType);
+  loadJoompro(lead);
   if(refPrice)$("sale").value=refPrice.toFixed(2);
   if(!$("nome").value)$("nome").value=q;
   renderListing(); render();
@@ -680,6 +738,7 @@ function renderSaved(){
     add(s.fornecedor?"Fornecedor: "+s.fornecedor:"");
     add(s.estande?"Estande: "+s.estande:"");
     add(LT[s.tipo_anuncio]?"Anúncio ref.: "+LT[s.tipo_anuncio]:"");
+    add(s.preco_usd_sugerido?"Preço = sugestão JoomPro (sem cotação do fornecedor)":"");
     add(`${usd(s.preco_usd)} → venda ${brl(s.preco_venda)} · lucro ${brl(s.lucro_otimista)} a ${brl(s.lucro_pessimista)}`);
     body.append(nm,meta);
     if(s.contato){const c=document.createElement("div");c.className="contact";c.textContent=s.contato;body.appendChild(c);}
@@ -724,6 +783,7 @@ $("f-ficha").addEventListener("submit",async ev=>{
     margem_otimista:fin(r.o.margin), margem_pessimista:fin(r.pe.margin),
     classificacao:classOf(r),
     tipo_anuncio:selected&&selected.listingType?selected.listingType:null,
+    preco_joompro:jpSug?fin(jpSug.price):null, preco_usd_sugerido:!!(jpSug&&!usdManual),
     anuncio_titulo:selected?selected.title:null, anuncio_url:selected?selected.meliUrl:null, imagem_url:selected?selected.imageUrl:null,
     vendas_mes:selected?fin(selected.sales1m):null, vendedores:selected&&selected.sellerCount!=null?Math.round(selected.sellerCount):null
   };

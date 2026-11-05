@@ -4,6 +4,7 @@
 //   GET  /callback    (redirect do JoomPulse) -> troca o code por tokens e volta ao app
 //   POST /status      (usuário logado)  -> { connected }
 //   POST /search      (usuário logado)  -> { columns, data } da busca meli_search_products
+//   POST /joompro     (usuário logado)  -> { columns, data } de joompro_find_matching_products
 //   POST /disconnect  (usuário logado)  -> apaga os tokens
 // Segredos necessários: JOOMPULSE_CLIENT_ID, JOOMPULSE_CLIENT_SECRET (opcional para cliente público)
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -256,6 +257,18 @@ Deno.serve(async (req) => {
     if (route === "status") {
       const t = await accessToken(userId);
       return json({ connected: !!t });
+    }
+
+    if (route === "joompro") {
+      const product = String(body.product ?? "").trim().slice(0, 60);
+      if (!product) return json({ error: "produto vazio" }, 400);
+      const token = await accessToken(userId);
+      if (!token) return json({ needs_connect: true });
+      const r: any = await mcpCall(token, "joompro_find_matching_products", { country: "BR", products: [product], preset: "general_info" });
+      if (r.unauthorized) { await admin.from("joompulse_tokens").delete().eq("user_id", userId); return json({ needs_connect: true }); }
+      const result = r.result ?? {};
+      if (result.isError) return json({ columns: [], data: [] });
+      return json(findTable(result.structuredContent) ?? findTable(result.content) ?? { columns: [], data: [] });
     }
 
     if (route === "disconnect") {
