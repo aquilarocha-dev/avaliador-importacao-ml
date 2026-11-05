@@ -230,7 +230,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
         <label class="check small"><input type="checkbox" id="frete-auto" checked> Tabela ML, produto de 1 a 2 kg</label></div>
       <div class="field"><label for="com_c">Comissão Clássico (%)</label><input class="num" id="com_c" type="number" step="0.1" min="0" inputmode="decimal" value="12"></div>
       <div class="field"><label for="com_p">Comissão Premium (%)</label><input class="num" id="com_p" type="number" step="0.1" min="0" inputmode="decimal" value="17"></div>
-      <div class="field"><label for="tgt">Margem mínima desejada (%)</label><input class="num" id="tgt" type="number" step="1" min="0" inputmode="decimal" value="20"></div>
+      <div class="field"><label for="tgt">Margem mínima desejada (%)</label><input class="num" id="tgt" type="number" step="1" min="0" inputmode="decimal" value="15"></div>
       <div class="field"><label for="mo">Fator importação otimista (×)</label><input class="num" id="mo" type="number" step="0.05" min="1" inputmode="decimal" value="1.8"></div>
       <div class="field"><label for="mp">Fator importação pessimista (×)</label><input class="num" id="mp" type="number" step="0.05" min="1" inputmode="decimal" value="2.2"></div>
       <div class="field"><label for="oth">Custos extras (R$/un.)</label><input class="num" id="oth" type="number" step="0.01" min="0" inputmode="decimal" value="2"></div>
@@ -310,7 +310,7 @@ let session=null;
 let remote=[]; // avaliações vindas do Supabase
 
 // chave do parâmetro no aparelho; "oth" ganhou versão nova quando o padrão passou para R$ 2
-const pkey=id=>"p_"+id+(id==="oth"?"_v2":"");
+const pkey=id=>"p_"+id+(id==="oth"||id==="tgt"?"_v2":"");
 PARAMS.forEach(id=>{const v=store.get(pkey(id),null);if(v!=null)$(id).value=v;});
 
 // foto do anúncio com alternativa quando a imagem não carrega
