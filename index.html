@@ -64,9 +64,9 @@ input[readonly]{opacity:.75}
 input.sug{border:1.5px dashed var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--soft));color:var(--accent)}
 .sugnote{margin:0;font-size:.74rem;line-height:1.35;color:var(--muted)}
 .sugnote b{color:var(--accent);font-weight:600}
-.sugnote.buy{margin-top:4px;padding:6px 8px;border-radius:6px;background:var(--soft);color:var(--ink)}
-.sugnote.buy b{color:var(--good)}
-.sugnote .ok{color:var(--good);font-weight:600}.sugnote .no{color:var(--bad);font-weight:600}
+.buynote{margin:0;font-size:.88rem;line-height:1.4;padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--good);border-radius:7px;background:var(--soft);color:var(--ink)}
+.buynote b{color:var(--good)}
+.buynote .ok{color:var(--good);font-weight:600}.buynote .no{color:var(--bad);font-weight:600}
 .sugnote a{color:var(--accent)}
 .check input{width:18px;height:18px;margin:0;padding:0;accent-color:var(--accent)}
 .linkbtn{background:none;border:none;padding:4px 0;color:var(--accent);font-weight:500;font-size:.85rem;text-decoration:underline;cursor:pointer}
@@ -196,8 +196,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
     <p class="label" id="l-custos">2 · Custos e venda</p>
     <div class="grid">
       <div class="field"><label for="usd">Preço do produto (US$/un.)</label><input class="num" id="usd" type="number" step="0.01" min="0" inputmode="decimal" value="3.20">
-        <p class="sugnote" id="usd-note" hidden></p>
-        <p class="sugnote buy" id="buy-note" hidden></p></div>
+        <p class="sugnote" id="usd-note" hidden></p></div>
       <div class="field"><label for="fx">Câmbio (R$ por US$)</label><input class="num" id="fx" type="number" step="0.01" min="0" inputmode="decimal" value="5.40"></div>
       <div class="field"><label for="sale">Preço de venda no ML (R$)</label><input class="num" id="sale" type="number" step="0.01" min="0" inputmode="decimal" value="59.90"></div>
       <div class="field"><label for="tax">Imposto sobre a venda (%)</label><input class="num" id="tax" type="number" step="0.1" min="0" inputmode="decimal" value="11"></div>
@@ -219,6 +218,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
     <div class="listing" id="listing" hidden></div>
     <div class="verdict" id="verdict"></div>
     <div class="kpis" id="kpis"></div>
+    <p class="buynote" id="buy-note" hidden></p>
     <div class="tablewrap"><table>
       <thead><tr><th>Item</th><th>Otimista<small id="h-o">1,8×</small></th><th>Pessimista<small id="h-p">2,2×</small></th></tr></thead>
       <tbody id="tb"></tbody>
