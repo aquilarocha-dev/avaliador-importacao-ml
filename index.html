@@ -108,6 +108,10 @@ input.sug{border:1.5px dashed var(--accent);background:color-mix(in srgb,var(--a
 .item{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:4px 10px;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;align-items:start}
 .item:hover{background:var(--soft)}
 .item.sel{background:var(--soft);box-shadow:inset 3px 0 0 var(--accent)}
+.list.collapsed{max-height:none}
+.list.collapsed .item:not(.sel){display:none}
+.list.collapsed .item.sel .t::after{content:" · toque para trocar";font-weight:400;font-size:.76rem;color:var(--muted)}
+#b-todos{align-self:flex-start}
 .item .t{font-size:.9rem;font-weight:500;overflow-wrap:anywhere}
 .item .p{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .item .m{grid-column:2/-1;font-size:.78rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px}
@@ -210,6 +214,7 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
     </div>
     <div class="stats" id="stats" hidden></div>
     <div class="list" id="list" hidden></div>
+    <button type="button" class="linkbtn" id="b-todos" hidden>Ver todos os resultados</button>
   </section>
 
   <section class="panel" aria-labelledby="l-custos">
@@ -487,6 +492,8 @@ $("f-busca").addEventListener("submit",async ev=>{
   $("b-busca").disabled=false;
 });
 
+$("b-todos").addEventListener("click",()=>setCollapsed(false));
+
 // ---------- conexão JoomPulse (OAuth via Edge Function) ----------
 const JP_FN=SUPABASE_URL+"/functions/v1/joompulse-oauth/";
 // guarda respostas do JoomPulse por 30 min, para não gastar consultas do plano repetindo a mesma busca
@@ -691,9 +698,17 @@ function toRowsG(pl){const cols=(pl&&pl.columns)||[], data=(pl&&pl.data)||[];ret
 // capture: roda antes do render() do campo, para o valor digitado não ser sobrescrito pela sugestão
 $("usd").addEventListener("input",()=>{if(jpSug&&!usdManual){usdManual=true;syncJoompro();setUsdNote(sugNoteHtml());}},{capture:true});
 
+// lista recolhida: só o anúncio escolhido fica visível; tocar nele de novo (ou em "ver todos") volta a lista
+function setCollapsed(on){
+  const list=$("list"), n=list.querySelectorAll(".item").length;
+  list.classList.toggle("collapsed",on);
+  $("b-todos").hidden=!on; $("b-todos").textContent=`Ver todos os ${n} resultados`;
+  if(!on){list.querySelectorAll(".item").forEach(x=>{x.classList.remove("sel");x.setAttribute("aria-pressed","false");});}
+}
 function pickRow(r,el){
-  $("list").querySelectorAll(".item").forEach(x=>x.classList.remove("sel"));
-  if(el)el.classList.add("sel");
+  if(el&&el.classList.contains("sel")&&$("list").classList.contains("collapsed")){setCollapsed(false);return;}
+  $("list").querySelectorAll(".item").forEach(x=>{x.classList.remove("sel");x.setAttribute("aria-pressed","false");});
+  if(el){el.classList.add("sel");el.setAttribute("aria-pressed","true");setCollapsed(true);$("list").scrollTop=0;}
   selected={title:r.title,imageUrl:r.imageUrl,meliUrl:r.meliUrl,priceMin:r.priceMin,sales1m:r.sales1m,sellerCount:r.sellerCount,listingType:r.listingType||null};
   applyListingType(r.listingType);
   loadJoompro(r);
@@ -717,7 +732,7 @@ function showResults(q,rows){
     `<div class="stat"><b>${refPrice?brl(refPrice):"—"}</b><span>Preço mediano (top 5)</span></div>`+
     `<div class="stat"><b>${int(totSales)}</b><span>Vendas/mês (top 20)</span></div>`+
     `<div class="stat"><b>${brl(totRev)}</b><span>Faturamento/mês</span></div>`;
-  const list=$("list"); list.hidden=false; list.innerHTML="";
+  const list=$("list"); list.hidden=false; list.innerHTML=""; setCollapsed(false);
   rows.forEach(r=>{
     const el=document.createElement("div"); el.className="item"; el.tabIndex=0; el.setAttribute("role","button");
     const t=document.createElement("div");t.className="t";t.textContent=r.title||"(sem título)";
