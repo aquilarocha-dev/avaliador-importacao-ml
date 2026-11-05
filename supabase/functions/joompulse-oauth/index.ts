@@ -262,13 +262,24 @@ Deno.serve(async (req) => {
     if (route === "joompro") {
       const product = String(body.product ?? "").trim().slice(0, 60);
       if (!product) return json({ error: "produto vazio" }, 400);
+      const category = body.category ? String(body.category).slice(0, 20) : null;
+      const words = Array.isArray(body.words) ? body.words.map((w: unknown) => String(w).slice(0, 30)).slice(0, 4) : [];
       const token = await accessToken(userId);
       if (!token) return json({ needs_connect: true });
+      // 1) correspondência direta com o anúncio
       const r: any = await mcpCall(token, "joompro_find_matching_products", { country: "BR", products: [product], preset: "general_info" });
       if (r.unauthorized) { await admin.from("joompulse_tokens").delete().eq("user_id", userId); return json({ needs_connect: true }); }
-      const result = r.result ?? {};
-      if (result.isError) return json({ columns: [], data: [] });
-      return json(findTable(result.structuredContent) ?? findTable(result.content) ?? { columns: [], data: [] });
+      let table = (!r.result?.isError && (findTable(r.result?.structuredContent) ?? findTable(r.result?.content))) || { columns: [], data: [] };
+      if (table.data.length) return json({ mode: "match", ...table });
+      // 2) sem correspondência: produtos parecidos na mesma categoria do ML, pelas palavras do título
+      if (category && words.length) {
+        const s: any = await mcpCall(token, "joompro_search_products", {
+          country: "BR", taxonomy: "meli", categories: [category], where: { meliTitle: words }, sort_by: "matchScore", limit: 50, preset: "general_info",
+        });
+        table = (!s.result?.isError && (findTable(s.result?.structuredContent) ?? findTable(s.result?.content))) || { columns: [], data: [] };
+        return json({ mode: "similar", ...table });
+      }
+      return json({ mode: "match", columns: [], data: [] });
     }
 
     if (route === "disconnect") {

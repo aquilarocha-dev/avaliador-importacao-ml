@@ -521,36 +521,75 @@ function syncJoompro(){
 function setUsdNote(html){const n=$("usd-note");n.hidden=!html;n.innerHTML=html||"";}
 function sugNoteHtml(){
   if(!jpSug)return "";
-  const sc=jpSug.score!=null?` · similaridade ${Number(jpSug.score).toLocaleString("pt-BR",{maximumFractionDigits:2})}`:"";
+  const esc=t=>String(t||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const sc=jpMode==="match"&&jpSug.score!=null?` · similaridade ${Number(jpSug.score).toLocaleString("pt-BR",{maximumFractionDigits:2})}`:"";
   const moq=jpSug.moq?` · pedido mín. ${int(jpSug.moq)} un.`:"";
   const link=jpSug.url?` · <a href="${jpSug.url}" target="_blank" rel="noopener">ver na JoomPro</a>`:"";
+  const head=jpMode==="similar"
+    ? `<b>Produto parecido na JoomPro</b> (sem correspondência exata — confira): ${esc(jpSug.title||"")}<br>`
+    : `<b>Sugestão JoomPro</b>: `;
+  const others=jpCands.length>1?`<br>Outras opções: `+jpCands.map((c,i)=>i===jpSug.idx?"":`<button type="button" class="linkbtn" data-cand="${i}" title="${esc(c.title)}">${brl(c.joomproPrice)}</button>`).filter(Boolean).join(" · "):"";
   return usdManual
-    ? `Referência JoomPro: ${brl(jpSug.price)} entregue no Brasil${link}`
-    : `<b>Sugestão JoomPro</b>: ${brl(jpSug.price)}/un. entregue no Brasil${moq}${sc}${link}. Digite o preço do fornecedor para substituir.`;
+    ? `Referência JoomPro${jpMode==="similar"?" (produto parecido)":""}: ${brl(jpSug.price)} entregue no Brasil${link}${others}`
+    : `${head}${brl(jpSug.price)}/un. entregue no Brasil${moq}${sc}${link}. Digite o preço do fornecedor para substituir.${others}`;
 }
+// palavras do título do anúncio usadas para achar produto parecido na JoomPro
+const STOP=new Set("para com sem uma umas uns por pelo pela dos das nos nas kit und unid unidade unidades novo nova original promoção oferta cor cores tamanho modelo infantil adulto".split(" "));
+function titleWords(t){
+  return [...new Set(String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").split(/\s+/)
+    .filter(w=>w.length>=4&&!/\d/.test(w)&&!STOP.has(w)))].slice(0,4);
+}
+// palavras em comum pelo radical (6 letras), para "garrafa" casar com "garrafas" e "termica" com "termicas"
+function overlap(a,bTitle){
+  const st=w=>w.slice(0,6);
+  const bw=new Set(String(bTitle||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").split(/[^a-z0-9]+/).filter(Boolean).map(st));
+  return a.filter(w=>bw.has(st(w))).length;
+}
+async function jpTool(name,args){
+  if(mcp){const x=await mcp.callTool("JoomPulse",name,args,{cache:{staleTime:3600000,gcTime:3600000}});return toRowsG(x.payload||{});}
+  return null;
+}
+let jpCands=[], jpMode="match";
 async function loadJoompro(row){
   const id=row&&(row.productId||row.buyBoxItemId); const seq=++jpSeq;
-  jpSug=null; usdManual=false; syncJoompro();
+  jpSug=null; jpCands=[]; usdManual=false; syncJoompro();
   if(!id){setUsdNote("");return;}
   setUsdNote("Buscando preço sugerido na JoomPro…");
   await mcpReady;
-  let rows=[];
+  const words=titleWords(row.title), category=row.categoryLeafId||null;
+  let rows=[], mode="match";
   try{
     if(mcp){
-      const x=await mcp.callTool("JoomPulse","joompro_find_matching_products",{country:"BR",products:[id],preset:"general_info"},{cache:{staleTime:3600000,gcTime:3600000}});
-      rows=toRowsG(x.payload||{});
+      // 1) correspondência direta com o anúncio
+      rows=await jpTool("joompro_find_matching_products",{country:"BR",products:[id],preset:"general_info"});
+      // 2) sem correspondência: produtos JoomPro parecidos na mesma categoria do ML, pelas palavras do título
+      if(!rows.some(r=>r.joomproPrice>0)&&category&&words.length){
+        mode="similar";
+        rows=await jpTool("joompro_search_products",{country:"BR",taxonomy:"meli",categories:[category],where:{meliTitle:words},sort_by:"matchScore",limit:50,preset:"general_info"});
+      }
     }else if(session){
-      const x=await jpCall("joompro",{product:id});
+      const x=await jpCall("joompro",{product:id,category,words});
       if(x.needs_connect){if(seq===jpSeq)setUsdNote("Conecte o JoomPulse para ver o preço sugerido pela JoomPro.");return;}
-      rows=toRowsG(x);
+      mode=x.mode||"match"; rows=toRowsG(x);
     }else{if(seq===jpSeq)setUsdNote("");return;}
   }catch(e){if(seq===jpSeq)setUsdNote("Não foi possível consultar a JoomPro agora.");return;}
   if(seq!==jpSeq)return; // o usuário já escolheu outro produto
-  const best=rows.filter(r=>r.joomproPrice>0).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0))[0];
-  if(!best){setUsdNote("A JoomPro não tem produto equivalente a este anúncio. Informe o preço do fornecedor.");render();return;}
-  jpSug={price:best.joomproPrice,moq:best.minOrderQty,score:best.matchScore,url:best.joomproUrl||null,title:best.title||null};
-  setUsdNote(sugNoteHtml()); render();
+  rows=rows.filter(r=>r.joomproPrice>0);
+  if(mode==="similar"){
+    rows.forEach(r=>{r._ov=overlap(words,r.meliTitle);});
+    const ref=row.priceMin||num("sale");
+    rows=rows.filter(r=>r._ov>0).sort((a,b)=>(b._ov-a._ov)||(Math.abs((a.meliPrice||0)-ref)-Math.abs((b.meliPrice||0)-ref)));
+  }else rows.sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));
+  if(!rows.length){setUsdNote("Nem a correspondência direta nem a busca por produtos parecidos encontraram este item na JoomPro. Informe o preço do fornecedor.");render();return;}
+  jpMode=mode; jpCands=rows.slice(0,4);
+  useCand(0);
 }
+function useCand(i){
+  const c=jpCands[i]; if(!c)return;
+  jpSug={price:c.joomproPrice,moq:c.minOrderQty,score:c.matchScore,url:c.joomproUrl||null,title:c.title||null,meliTitle:c.meliTitle||null,idx:i};
+  usdManual=false; setUsdNote(sugNoteHtml()); render();
+}
+$("usd-note").addEventListener("click",e=>{const b=e.target.closest("[data-cand]");if(b){e.preventDefault();useCand(+b.dataset.cand);}});
 function toRowsG(pl){const cols=(pl&&pl.columns)||[], data=(pl&&pl.data)||[];return data.map(d=>Object.fromEntries(cols.map((c,i)=>[c,d[i]])));}
 // capture: roda antes do render() do campo, para o valor digitado não ser sobrescrito pela sugestão
 $("usd").addEventListener("input",()=>{if(jpSug&&!usdManual){usdManual=true;syncJoompro();setUsdNote(sugNoteHtml());}},{capture:true});
