@@ -158,6 +158,20 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
 .sv .x{border:none;background:none;color:var(--muted);padding:4px 6px}
 .sv .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 @media (max-width:440px){.stats,.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.ficha,.grid.login{grid-template-columns:minmax(0,1fr)}.listing{grid-template-columns:88px minmax(0,1fr)}.listing .thumb{width:88px;height:88px}}
+.calc-fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:40;width:56px;height:56px;border-radius:50%;padding:0;border:none;background:var(--accent);color:var(--accent-ink);box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+.calc-fab.dragging{cursor:grabbing;box-shadow:0 10px 26px rgba(0,0,0,.35);transform:scale(1.06)}
+.calc{position:fixed;z-index:45;width:min(292px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.28);padding:12px;display:flex;flex-direction:column;gap:10px}
+.calc-top{display:flex;justify-content:space-between;align-items:center;font-family:var(--f-display);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:.85rem;color:var(--muted)}
+.calc-x{border:none;background:none;color:var(--muted);padding:4px 8px}
+.calc-disp{background:var(--soft);border-radius:8px;padding:8px 10px;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;min-width:0}
+.calc-expr{font-size:.8rem;color:var(--muted);min-height:1.2em;overflow-wrap:anywhere}
+.calc-val{font-size:1.6rem;line-height:1.2;overflow-wrap:anywhere}
+.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.calc-keys button{padding:12px 0;font-family:var(--f-mono);font-size:1.05rem;border-radius:8px}
+.calc-keys .fn{color:var(--muted);font-size:.9rem}
+.calc-keys .op{color:var(--accent)}
+.calc-keys .eq{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+@media print{.calc-fab,.calc{display:none!important}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -267,6 +281,21 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
     <p class="status" id="sync-st" hidden></p>
     <div class="saved" id="saved"></div>
   </section>
+</div>
+
+<button type="button" class="calc-fab" id="calc-fab" aria-label="Abrir calculadora" aria-expanded="false" title="Calculadora (arraste para mover)">
+  <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><rect x="8" y="5.5" width="8" height="3.5" rx=".6"/><path d="M8.5 12.5h.01M12 12.5h.01M15.5 12.5h.01M8.5 15.5h.01M12 15.5h.01M15.5 15.5h.01M8.5 18.5h.01M12 18.5h.01M15.5 18.5h.01"/></svg>
+</button>
+<div class="calc" id="calc" hidden role="dialog" aria-label="Calculadora">
+  <div class="calc-top"><span>Calculadora</span><button type="button" class="calc-x" id="calc-x" aria-label="Fechar calculadora">✕</button></div>
+  <div class="calc-disp"><div class="calc-expr" id="calc-expr">&nbsp;</div><div class="calc-val" id="calc-val" aria-live="polite">0</div></div>
+  <div class="calc-keys" id="calc-keys">
+    <button type="button" data-k="C" class="fn">C</button><button type="button" data-k="back" class="fn" aria-label="Apagar">⌫</button><button type="button" data-k="%" class="fn">%</button><button type="button" data-k="/" class="op" aria-label="Dividir">÷</button>
+    <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button><button type="button" data-k="*" class="op" aria-label="Multiplicar">×</button>
+    <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button><button type="button" data-k="-" class="op" aria-label="Subtrair">−</button>
+    <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button><button type="button" data-k="+" class="op" aria-label="Somar">+</button>
+    <button type="button" data-k="copy" class="fn" aria-label="Copiar resultado">copiar</button><button type="button" data-k="0">0</button><button type="button" data-k=",">,</button><button type="button" data-k="=" class="eq">=</button>
+  </div>
 </div>
 
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Foto do produto JoomPro">
@@ -954,6 +983,100 @@ $("f-ficha").addEventListener("submit",async ev=>{
   ["nome","forn","estande","contato"].forEach(id=>$(id).value="");
   renderSaved();
 });
+
+// ---------- bola da calculadora: arrastar move, tocar abre ----------
+(function(){
+  const fab=$("calc-fab"), box=$("calc"), POS="calc_fab_pos";
+  const clampPos=(x,y)=>{const w=fab.offsetWidth||56,h=fab.offsetHeight||56;return[Math.min(Math.max(8,x),innerWidth-w-8),Math.min(Math.max(8,y),innerHeight-h-8)];};
+  const place=(x,y)=>{[x,y]=clampPos(x,y);fab.style.left=x+"px";fab.style.top=y+"px";fab.style.right="auto";fab.style.bottom="auto";};
+  try{const p=JSON.parse(localStorage.getItem(POS)||"null");if(p)place(p.x*innerWidth,p.y*innerHeight);}catch(e){}
+  let start=null, dragging=false;
+  fab.addEventListener("pointerdown",e=>{const r=fab.getBoundingClientRect();start={x:e.clientX,y:e.clientY,dx:e.clientX-r.left,dy:e.clientY-r.top};dragging=false;fab.setPointerCapture(e.pointerId);});
+  fab.addEventListener("pointermove",e=>{
+    if(!start)return;
+    if(!dragging&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>6){dragging=true;fab.classList.add("dragging");}
+    if(dragging){place(e.clientX-start.dx,e.clientY-start.dy);if(!box.hidden)posBox();}
+  });
+  const end=e=>{
+    if(!start)return;
+    if(dragging){fab.classList.remove("dragging");const r=fab.getBoundingClientRect();try{localStorage.setItem(POS,JSON.stringify({x:r.left/innerWidth,y:r.top/innerHeight}))}catch(_){}}
+    else toggle();
+    start=null;dragging=false;
+  };
+  fab.addEventListener("pointerup",end);
+  fab.addEventListener("pointercancel",()=>{start=null;dragging=false;fab.classList.remove("dragging");});
+  fab.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();toggle();}});
+  addEventListener("resize",()=>{if(fab.style.left){const r=fab.getBoundingClientRect();place(r.left,r.top);}if(!box.hidden)posBox();});
+  // abre a calculadora ao lado da bola, sem sair da tela
+  function posBox(){
+    const r=fab.getBoundingClientRect(), bw=box.offsetWidth, bh=box.offsetHeight;
+    let x=r.right-bw, y=r.top-bh-10;
+    if(y<8)y=r.bottom+10;
+    if(y+bh>innerHeight-8)y=Math.max(8,innerHeight-bh-8);
+    x=Math.min(Math.max(8,x),innerWidth-bw-8);
+    box.style.left=x+"px"; box.style.top=y+"px";
+  }
+  function toggle(open){
+    open=open==null?box.hidden:open;
+    box.hidden=!open; fab.setAttribute("aria-expanded",String(open));
+    if(open)posBox();
+  }
+  $("calc-x").addEventListener("click",()=>{toggle(false);fab.focus();});
+
+  // calculadora simples: digita a conta, "=" resolve; vírgula decimal; % divide por 100
+  let expr="", justDone=false;
+  const fmt=v=>isFinite(v)?Number(v.toPrecision(12)).toLocaleString("pt-BR",{maximumFractionDigits:8}):"Erro";
+  const pretty=t=>t.replace(/\*/g," × ").replace(/\//g," ÷ ").replace(/(?<=\d|%)-/g," − ").replace(/\+/g," + ").replace(/\./g,",");
+  function evaluate(t){
+    const toks=t.match(/\d+(?:\.\d+)?%?|\.\d+%?|[+\-*/]/g); if(!toks)return NaN;
+    const nums=[],ops=[],prec={"+":1,"-":1,"*":2,"/":2};
+    const apply=()=>{const b=nums.pop(),a=nums.pop(),o=ops.pop();nums.push(o==="+"?a+b:o==="-"?a-b:o==="*"?a*b:a/b);};
+    let expectNum=true, neg=false;
+    for(const k of toks){
+      if(/[\d.]/.test(k[0])){
+        let v=parseFloat(k);
+        // % como na calculadora de bolso: 200 + 10% = 220; 200 × 10% = 20
+        if(k.endsWith("%")){v/=100;const o=ops[ops.length-1];if((o==="+"||o==="-")&&nums.length)v*=nums[nums.length-1];}
+        nums.push(neg?-v:v);neg=false;expectNum=false;}
+      else if(expectNum&&k==="-"){neg=!neg;}
+      else if(!expectNum){while(ops.length&&prec[ops[ops.length-1]]>=prec[k])apply();ops.push(k);expectNum=true;}
+    }
+    if(expectNum&&ops.length)ops.pop();
+    while(ops.length)apply();
+    return nums.length===1?nums[0]:NaN;
+  }
+  function show(){
+    $("calc-expr").textContent=justDone?pretty(expr)+" =":(expr?pretty(expr):" ");
+    const v=evaluate(justDone?expr:expr.replace(/[+\-*/]$/,""));
+    $("calc-val").textContent=expr?fmt(v):"0";
+  }
+  function press(k){
+    if(k==="C"){expr="";justDone=false;}
+    else if(k==="back"){if(justDone){justDone=false;}else expr=expr.slice(0,-1);}
+    else if(k==="="){const v=evaluate(expr.replace(/[+\-*/]$/,""));if(isFinite(v)){justDone=true;show();expr=String(Number(v.toPrecision(12)));$("calc-val").textContent=fmt(v);return;}}
+    else if(k==="copy"){const v=$("calc-val").textContent;try{navigator.clipboard.writeText(v.replace(/\./g,""));}catch(_){}
+      const b=box.querySelector('[data-k="copy"]');b.textContent="copiado";setTimeout(()=>b.textContent="copiar",1200);return;}
+    else{
+      if(k===",")k=".";
+      if(justDone){if(/[\d.]/.test(k))expr="";justDone=false;}
+      const last=expr.slice(-1);
+      if(/[+*/]/.test(k)&&(!expr||/[+\-*/]/.test(last))){if(expr&&/[+\-*/]/.test(last))expr=expr.slice(0,-1)+k;return show();}
+      if(k==="-"&&last==="-")return;
+      if(k==="%"&&!/\d/.test(last))return;
+      if(k==="."){const cur=expr.split(/[+\-*/]/).pop();if(cur.includes("."))return;if(!/\d/.test(last))expr+="0";}
+      if(/\d/.test(k)&&last==="%")return;
+      expr+=k;
+    }
+    show();
+  }
+  $("calc-keys").addEventListener("click",e=>{const b=e.target.closest("[data-k]");if(b)press(b.dataset.k);});
+  document.addEventListener("keydown",e=>{
+    if(box.hidden||e.target.matches("input,select,textarea"))return;
+    const map={Enter:"=","=":"=",Backspace:"back",Escape:"esc",Delete:"C",",":",",".":",","*":"*","x":"*","/":"/","+":"+","-":"-","%":"%"};
+    const k=/^\d$/.test(e.key)?e.key:map[e.key]; if(!k)return;
+    e.preventDefault(); if(k==="esc"){toggle(false);fab.focus();}else press(k);
+  });
+})();
 
 // ---------- início ----------
 render(); renderListing(); renderSaved();
