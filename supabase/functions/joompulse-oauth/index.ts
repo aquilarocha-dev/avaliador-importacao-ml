@@ -282,6 +282,24 @@ Deno.serve(async (req) => {
       }
       const table = findTable(result.structuredContent) ?? findTable(result.content) ?? findTable(result);
       if (!table) return json({ error: "Resposta do JoomPulse em formato inesperado" }, 502);
+      // tipo de anúncio (Premium/Clássico) do item do buy box, via meli_get_item (a busca não traz a coluna)
+      const iBB = table.columns.indexOf("buyBoxItemId");
+      if (iBB >= 0) {
+        const ids = [...new Set(table.data.map((d: any[]) => d[iBB]).filter(Boolean))].slice(0, 100) as string[];
+        const types: Record<string, string> = {};
+        if (ids.length) {
+          try {
+            const x: any = await mcpCall(token, "meli_get_item", { country: "BR", ids, preset: "full_info" });
+            const t = findTable(x.result?.structuredContent) ?? findTable(x.result?.content);
+            if (t) {
+              const ii = t.columns.indexOf("itemId"), il = t.columns.indexOf("listingType");
+              if (ii >= 0 && il >= 0) for (const row of t.data) types[row[ii]] = row[il];
+            }
+          } catch (_) { /* tipo fica em branco */ }
+        }
+        table.columns = [...table.columns, "listingType"];
+        table.data = table.data.map((d: any[]) => [...d, types[d[iBB]] ?? null]);
+      }
       return json(table);
     }
 
