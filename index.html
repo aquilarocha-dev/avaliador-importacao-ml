@@ -64,6 +64,26 @@ input[readonly]{opacity:.75}
 input.sug{border:1.5px dashed var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--soft));color:var(--accent)}
 .sugnote{margin:0;font-size:.74rem;line-height:1.35;color:var(--muted)}
 .sugnote b{color:var(--accent);font-weight:600}
+.jpcard{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:start;padding:10px;border:1.5px dashed var(--accent);border-radius:8px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.jpcard.manual{border-style:solid;border-color:var(--line);background:var(--soft)}
+.jpimg{width:76px;height:76px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff;overflow:hidden;cursor:zoom-in;position:relative}
+.jpimg img{width:100%;height:100%;object-fit:contain;display:block}
+.jpimg .zoom{position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.55);color:#fff;font-size:.62rem;border-radius:4px;padding:1px 4px}
+.jpinfo{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:.8rem;color:var(--ink)}
+.jpinfo .tag{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;font-weight:600;color:var(--accent)}
+.jpinfo .tt{font-weight:600;overflow-wrap:anywhere}
+.jpinfo .ml{color:var(--muted);overflow-wrap:anywhere}
+.jpinfo .pr{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.jpalts{grid-column:1/-1;display:flex;gap:8px;overflow-x:auto;padding-top:4px}
+.jpalt{flex:none;width:64px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font:inherit;font-size:.7rem;font-family:var(--f-mono);color:var(--ink);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
+.jpalt img{width:56px;height:56px;object-fit:contain;background:#fff;border-radius:4px}
+.jpalt .ph{width:56px;height:56px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.6rem}
+.lightbox{position:fixed;inset:0;z-index:50;background:rgba(10,14,18,.88);display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+.lightbox figure{margin:0;max-width:min(560px,100%);display:flex;flex-direction:column;gap:10px;align-items:center}
+.lightbox img{width:min(520px,100%);height:auto;max-height:65vh;object-fit:contain;background:#fff;border-radius:8px}
+.lightbox #lb-use{margin-top:4px}
+.lightbox figcaption{color:#eef1f4;font-size:.9rem;text-align:center;line-height:1.35}
+.lightbox #lb-close{position:absolute;top:max(12px,env(safe-area-inset-top));right:12px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1.1rem;border-radius:50%;width:40px;height:40px;padding:0}
 .buynote{margin:0;font-size:.88rem;line-height:1.4;padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--good);border-radius:7px;background:var(--soft);color:var(--ink)}
 .buynote b{color:var(--good)}
 .buynote .ok{color:var(--good);font-weight:600}.buynote .no{color:var(--bad);font-weight:600}
@@ -195,9 +215,9 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
   <section class="panel" aria-labelledby="l-custos">
     <p class="label" id="l-custos">2 · Custos e venda</p>
     <div class="grid">
-      <div class="field"><label for="usd">Preço do produto (US$/un.)</label><input class="num" id="usd" type="number" step="0.01" min="0" inputmode="decimal" value="3.20">
-        <p class="sugnote" id="usd-note" hidden></p></div>
+      <div class="field"><label for="usd">Preço do produto (US$/un.)</label><input class="num" id="usd" type="number" step="0.01" min="0" inputmode="decimal" value="3.20"></div>
       <div class="field"><label for="fx">Câmbio (R$ por US$)</label><input class="num" id="fx" type="number" step="0.01" min="0" inputmode="decimal" value="5.40"></div>
+      <div class="field full"><div class="sugnote" id="usd-note" hidden></div></div>
       <div class="field"><label for="sale">Preço de venda no ML (R$)</label><input class="num" id="sale" type="number" step="0.01" min="0" inputmode="decimal" value="59.90"></div>
       <div class="field"><label for="tax">Imposto sobre a venda (%)</label><input class="num" id="tax" type="number" step="0.1" min="0" inputmode="decimal" value="11"></div>
       <div class="field"><label for="tipo">Tipo de anúncio no ML</label><select id="tipo"><option value="gold_special">Clássico</option><option value="gold_pro">Premium</option></select></div>
@@ -242,6 +262,11 @@ td.good{color:var(--good)} td.bad{color:var(--bad)}
     <p class="status" id="sync-st" hidden></p>
     <div class="saved" id="saved"></div>
   </section>
+</div>
+
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Foto do produto JoomPro">
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption><button type="button" class="primary" id="lb-use" hidden>Usar este produto</button></figure>
+  <button type="button" id="lb-close" aria-label="Fechar">✕</button>
 </div>
 
 <script>
@@ -570,14 +595,19 @@ function sugNoteHtml(){
   const esc=t=>String(t||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const sc=jpMode==="match"&&jpSug.score!=null?` · similaridade ${Number(jpSug.score).toLocaleString("pt-BR",{maximumFractionDigits:2})}`:"";
   const moq=jpSug.moq?` · pedido mín. ${int(jpSug.moq)} un.`:"";
-  const link=jpSug.url?` · <a href="${jpSug.url}" target="_blank" rel="noopener">ver na JoomPro</a>`:"";
-  const head=jpMode==="similar"
-    ? `<b>Produto parecido na JoomPro</b> (sem correspondência exata — confira): ${esc(jpSug.title||"")}<br>`
-    : `<b>Sugestão JoomPro</b>: `;
-  const others=jpCands.length>1?`<br>Outras opções: `+jpCands.map((c,i)=>i===jpSug.idx?"":`<button type="button" class="linkbtn" data-cand="${i}" title="${esc(c.title)}">${brl(c.joomproPrice)}</button>`).filter(Boolean).join(" · "):"";
-  return usdManual
-    ? `Referência JoomPro${jpMode==="similar"?" (produto parecido)":""}: ${brl(jpSug.price)} entregue no Brasil${link}${others}`
-    : `${head}${brl(jpSug.price)}/un. entregue no Brasil${moq}${sc}${link}. Digite o preço do fornecedor para substituir.${others}`;
+  const tag=usdManual?"Referência JoomPro":jpMode==="similar"?"Produto parecido na JoomPro — confira a foto":"Sugestão JoomPro — confira a foto";
+  const img=jpSug.img
+    ? `<button type="button" class="jpimg" data-zoom="${jpSug.idx}" aria-label="Ampliar foto"><img src="${esc(jpSug.img)}" alt="" referrerpolicy="no-referrer" loading="lazy"><span class="zoom">⤢</span></button>`
+    : `<div class="jpimg" style="cursor:default;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:var(--muted)">sem foto</div>`;
+  const ml=jpSug.meliTitle?`<span class="ml">Ligado no ML a: ${esc(jpSug.meliTitle)}</span>`:"";
+  const alts=jpCands.length>1?`<div class="jpalts" aria-label="Outras opções">`+jpCands.map((c,i)=>i===jpSug.idx?"":
+      `<button type="button" class="jpalt" data-cand="${i}" title="${esc(c.title)}">${c.imageUrl?`<img src="${esc(c.imageUrl)}" alt="" referrerpolicy="no-referrer" loading="lazy">`:`<span class="ph">sem foto</span>`}${brl(c.joomproPrice)}</button>`).join("")+`</div>`:"";
+  return `<div class="jpcard${usdManual?" manual":""}">${img}<div class="jpinfo">
+      <span class="tag">${tag}</span>
+      <span class="tt">${esc(jpSug.title||"Produto sem título")}</span>${ml}
+      <span class="pr">${brl(jpSug.price)}/un. entregue no Brasil${moq}${sc}</span>
+      ${usdManual?"":`<span class="ml">Não é o mesmo produto? Toque em outra opção abaixo ou digite o preço do fornecedor.</span>`}
+    </div>${alts}</div>`;
 }
 // palavras do título do anúncio usadas para achar produto parecido na JoomPro
 const STOP=new Set("para com sem uma umas uns por pelo pela dos das nos nas kit und unid unidade unidades novo nova original promoção oferta cor cores tamanho modelo infantil adulto".split(" "));
@@ -607,14 +637,14 @@ async function loadJoompro(row){
   try{
     if(mcp){
       // 1) correspondência direta com o anúncio
-      rows=await jpTool("joompro_find_matching_products",{country:"BR",products:[id],preset:"general_info"});
+      rows=await jpTool("joompro_find_matching_products",{country:"BR",products:[id],preset:"full_info"});
       // 2) sem correspondência: produtos JoomPro parecidos na mesma categoria do ML, pelas palavras do título
       if(!rows.some(r=>r.joomproPrice>0)&&category&&words.length){
         mode="similar";
-        rows=await jpTool("joompro_search_products",{country:"BR",taxonomy:"meli",categories:[category],where:{meliTitle:words},sort_by:"matchScore",limit:50,preset:"general_info"});
+        rows=await jpTool("joompro_search_products",{country:"BR",taxonomy:"meli",categories:[category],where:{meliTitle:words},sort_by:"matchScore",limit:50,preset:"full_info"});
       }
     }else if(session){
-      const ck="j:"+id;
+      const ck="j2:"+id;
       let x=cacheGet(ck);
       if(!x){x=await jpCall("joompro",{product:id,category,words}); if(!x.error&&!x.needs_connect)cacheSet(ck,x);}
       if(x.needs_connect){if(seq===jpSeq)setUsdNote("Conecte o JoomPulse para ver o preço sugerido pela JoomPro.");return;}
@@ -635,10 +665,28 @@ async function loadJoompro(row){
 }
 function useCand(i){
   const c=jpCands[i]; if(!c)return;
-  jpSug={price:c.joomproPrice,moq:c.minOrderQty,score:c.matchScore,url:c.joomproUrl||null,title:c.title||null,meliTitle:c.meliTitle||null,idx:i};
+  jpSug={price:c.joomproPrice,moq:c.minOrderQty,score:c.matchScore,url:c.joomproUrl||null,title:c.title||null,meliTitle:c.meliTitle||null,img:c.imageUrl||null,idx:i};
   usdManual=false; setUsdNote(sugNoteHtml()); render();
 }
-$("usd-note").addEventListener("click",e=>{const b=e.target.closest("[data-cand]");if(b){e.preventDefault();useCand(+b.dataset.cand);}});
+$("usd-note").addEventListener("click",e=>{
+  const z=e.target.closest("[data-zoom]"); if(z){e.preventDefault();openLightbox(jpCands[+z.dataset.zoom]);return;}
+  // outra opção: abre a foto ampliada para conferir antes de usar
+  const b=e.target.closest("[data-cand]"); if(b){e.preventDefault();const c=jpCands[+b.dataset.cand];if(c&&c.imageUrl)openLightbox(c,+b.dataset.cand);else useCand(+b.dataset.cand);}
+});
+let lbCand=null;
+function openLightbox(c,useIdx){
+  if(!c||!c.imageUrl)return;
+  lbCand=useIdx==null?null:useIdx; $("lb-use").hidden=lbCand==null;
+  $("lb-img").src=c.imageUrl; $("lb-img").alt=c.title||"";
+  $("lb-cap").textContent=(c.title||"")+(c.meliTitle?" — ligado no ML a: "+c.meliTitle:"")+" · "+brl(c.joomproPrice)+"/un. entregue";
+  $("lightbox").hidden=false; $("lb-close").focus();
+}
+function closeLightbox(){$("lightbox").hidden=true;$("lb-img").removeAttribute("src");}
+$("lightbox").addEventListener("click",e=>{
+  if(e.target.id==="lb-use"){const i=lbCand;closeLightbox();if(i!=null)useCand(i);return;}
+  if(e.target.id!=="lb-img")closeLightbox();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("lightbox").hidden)closeLightbox();});
 function toRowsG(pl){const cols=(pl&&pl.columns)||[], data=(pl&&pl.data)||[];return data.map(d=>Object.fromEntries(cols.map((c,i)=>[c,d[i]])));}
 // capture: roda antes do render() do campo, para o valor digitado não ser sobrescrito pela sugestão
 $("usd").addEventListener("input",()=>{if(jpSug&&!usdManual){usdManual=true;syncJoompro();setUsdNote(sugNoteHtml());}},{capture:true});
